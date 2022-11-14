@@ -50,18 +50,17 @@ package hkt
    type `('a, List.t) app` is the type expression `'a list`. We can convert
    between the two using the `inj` and `prj` functions.
 
-   One dissatisfying thing about Yallop's solution is its requirement of an
-   unsafe cast within the implementation of the `Newtype1` functor. While it is
-   meta-theoretically safe due to encapsulation and generative properties of
-   OCaml's module system, it would be preferable to have an entirely native
-   encoding.
+   Yallop presented two different implementations of the `Newtype1` functor,
+   one using an unsafe cast (that was meta-theoretically safe due to module
+   encapsulation) and another using extensible sums, which had not yet landed
+   in the main OCaml compiler at the time.
 
-   The core difficulty in representing this encoding in pure OCaml is in the
-   definition of the type `app`. Classically, defunctionalisation is a
+   The core difficulty in representing this encoding in "pure" OCaml is in
+   the definition of the type `app`. Classically, defunctionalisation is a
    whole-program transformation, in which a single dispatch function handles
    every higher-order function usage. But this is obviously not very modular,
    as it would require knowing the identity of every higher-kinded type
-   constructor in advance. Ideally, the `app` type should be extensible
+   constructor in advance. This means the `app` type must be extensible
    post-hoc, letting the user create new brands easily. We also need to have
    some means of converting from `('a, f_brand) app` to the underlying proper
    type `'a f`.
@@ -77,21 +76,19 @@ trait Func:
   type ReturnVar
 
 /* where a new clause mapping the input `Foo` to the output `Bar` is declared
-   by implementing the trait `Func` for `Foo` with `type ReturnVar = Bar`.
+   by implementing the trait `Func` for `Foo` with `type ReturnVar = Bar`. This
+   is actually enough to fully implement `higher`, using only features present
+   in first-order DOT.
 
    # `higher` in first-order Scala
 
-   We present three versions of Yallop's representation:
+   We present two versions of Yallop's representation:
 
-   - A "direct" translation, mapping OCaml interfaces, functors and modules to
-     traits, classes and objects using the translation suggested in passing by
-     Martin Odersky in his 2013 talk "Scala with Style" and elaborated on by
-     Dan James in his blog post [Scala's Modular Roots](https://pellucidanalytics.tumblr.com/post/94532532890/scalas-modular-roots).
+   - A "direct" translation.
 
-   - A slightly less verbose translation using anonymous objects.
-
-   - A more idiomatic, object-oriented encoding.
+   - A fully object-oriented encoding.
  */
+
 
 /*
 trait Apply1[F, A]:
