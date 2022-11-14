@@ -1,3 +1,4 @@
-**/target
+**/target/
+**/.bloop/
 .bsp
 .metals
