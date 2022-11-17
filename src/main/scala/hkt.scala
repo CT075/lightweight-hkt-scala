@@ -84,26 +84,23 @@ trait Func:
 
    We present two versions of Yallop's representation:
 
-   - A "direct" translation.
+   - A "direct" translation using functional constructs.
 
-   - A fully object-oriented encoding.
+   - A more object-oriented encoding.
  */
 
+import hkt.direct._;
 
-/*
+
 trait Apply1[F, A]:
   type This
   def prj(): This
-
-object Apply1:
-  type Aux[F, A, This0] = Apply1[F, A] { type This = This0 }
 
 case class IdW()
 
 class IdH[A] private (x: A) extends Apply1[IdW, A]:
   type This = A
   override def prj(): This = x
-  */
 
 /*
 case class ListW()

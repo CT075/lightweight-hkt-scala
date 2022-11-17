@@ -20,60 +20,83 @@ sealed trait Apply[F, A]
    we would write in Scala as
 
    ```scala
-     trait Newtype1:
-     type S[A]
-     // ...
+     trait Newtype1S:
+       type S[A]
+       // ...
    ```
 
    but this is *exactly* the functionality we are attempting to avoid with this
-   encoding! Instead, we need to introduce a generic parameter to the trait
-   itself:
- */
+   encoding!
 
-trait Newtype1S[A]:
-  type T
-  type S
-  def inj(x: S): Apply[T, A]
-  def prj(t: Apply[T, A]): S
-
-/* As Scala lacks an analogue to ML's anonymous signatures, we also need an
-   explicit trait to represent the input type:
- */
-
-trait Newtype1I[A]:
-  type T
-  def _hack(v: Nothing): T
-
-/* From here, a translation of `Newtype1` appears to follow straightforwardly:
+   One idea would be to attach the generic to the trait itself:
 
    ```scala
-     class Newtype1[A](val Base: Newtype1I[A]) extends Newtype1S[A]:
-       case object T
-       type S = Base.T
-
-       private case class App(x: S) extends Apply[T, A]
-
-       def inj(x: S): Apply[T, A] = App(x)
-       def prj(t: Apply[T, A]) = t match
-         case App(x) => x
+     trait Newtype1S[A]:
+       type S
+       type T
+       // ...
    ```
 
-   While this compiles, it doesn't quite work -- the class argument, `Base`,
-   is ascribed to the *abstract* signature `Newtype1I[A]`, which will prevent
-   the type `S` from ever unifying with a concrete type (say, `List[A]`).
+   But this won't work, because that would create a new brand `T` for every
+   instantiation of the generic parameter `A`.
+
+   Instead, we need to delay the application of `A` by creating an inner
+   class/trait:
+ */
+
+trait Newtype1:
+  // The brand. Each instantiation of `Newtype1` will create a new brand.
+  type T
+
+  trait ApplyS[A]:
+    // The fully-realized type, e.g. `List[A]`
+    type S
+
+    // Add a new variant to `Apply` corresponding to our brand
+    private case class App(x: S) extends Apply[T, A]
+
+    def inj(x: S): Apply[T, A] = App(x)
+    def prj(t: Apply[T, A]): S = t match
+      // This match is safe, because `Apply` is sealed so the only way to
+      // produce a value of type `Apply[T,A]` for this particular brand is via
+      // `inj` above.
+      case App(x) => x
+
+/* Now, we can create higher-kinded witnesses by extending `Newtype1`:
+ */
+
+object ListW extends Newtype1:
+  type T
+
+  class M[A] extends ApplyS[A]:
+    type S = List[A]
+
+object OptionW extends Newtype1:
+  type T
+
+  class M[A] extends ApplyS[A]:
+    type S = Option[A]
+
+object IdW extends Newtype1:
+  type T
+
+  class M[A] extends ApplyS[A]:
+    type S = A
+
+/*
+def Newtype1[A](Base: Newtype1I[A]) = new Newtype1S[A] {
+    type T
+    type S = Base.T
+
+    private case class App(x: S) extends Apply[T, A]
+    def inj(x: S): Apply[T, A] = App(x)
+    def prj(t: Apply[T, A]) = t match
+      case App(x) => x
+      case _ => throw new Exception
+  }
+
+def mkHKList[A]() = Newtype1[A](new Newtype1I[A] { type T = List[A] })
 */
-
-abstract class Newtype1[A]:
-  val Base: Newtype1I[A]
-
-  case object T
-  type S = Base.T
-
-  private case class App(x: S) extends Apply[T.type, A]
-
-  def inj(x: S): Apply[T.type, A] = App(x)
-  def prj(t: Apply[T.type, A]) = t match
-    case App(x) => x
 
 /* Note that, although `Apply` is sealed, we can still extend it with the new
    case class `App` each time a new object of the `Newtype1` class is
