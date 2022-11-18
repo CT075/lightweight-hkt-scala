@@ -1,9 +1,20 @@
 package hkt
 
-/* # Lightweight higher-kinded polymorphism in Scala
+/* # Lightweight higher-kinded polymorphism in DOT
 
    This is an adaptation of "Lightweight higher-kinded polymorphism" (Jeremy
-   Yallop and Leo White, FLOPS 2014) to Scala.
+   Yallop and Leo White, FLOPS 2014) to Scala. While Scala itself has
+   first-class higher-kinded types and polymorphism, introducing higher-kinded
+   types into Scala's underlying type theory (the DOT calculus, or just DOT)
+   remains an open problem.
+
+   Yallop's encoding, however, can express higher-kinded patterns in OCaml,
+   a first-order system similar to DOT. It was noted by Odersky in his 2013
+   talk "Scala with Style" that Scala's path-dependent types form a
+   correspondence with ML modules (in particular, the classical SML module
+   system extended with first-class modules), so it should be possible to
+   reproduce Yallop's encoding in Scala 3 without using Scala's higher-order
+   types
 
    ## OCaml's `higher`
 
@@ -77,8 +88,8 @@ trait Func:
 
 /* where a new clause mapping the input `Foo` to the output `Bar` is declared
    by implementing the trait `Func` for `Foo` with `type ReturnVar = Bar`. This
-   is actually enough to fully implement `higher`, using only features present
-   in first-order DOT.
+   is actually enough to fully implement `higher`, using only features
+   currently present in DOT.
 
    # `higher` in first-order Scala
 
@@ -89,22 +100,57 @@ trait Func:
    - A more object-oriented encoding.
  */
 
-import hkt.direct._;
+/*
+trait Witness[A]:
+  type This
 
-trait Apply1[F, A]:
+class Apply[A](val F: Witness[A], x: F.This):
+  def prj(): F.This = x
+
+trait HKT:
+  def mkBrand[A](): Witness[A]
+
+object ListH extends HKT:
+  def mkBrand[A]() = new Witness[A] { type This = List[A] }
+
+class PersonM(val W: HKT):
+  val IntW = W.mkBrand[Int]()
+  val StringW = W.mkBrand[String]()
+
+  case class Person(name: StringW.This, age: IntW.This)
+
+object IdH extends HKT:
+  def mkBrand[A]() = new Witness[A] { type This = A }
+
+object OptH extends HKT:
+  def mkBrand[A]() = new Witness[A] { type This = Option[A] }
+  */
+
+trait Apply[F, A]:
   type This
   def prj(): This
 
-case class IdW()
+trait HKT
 
-class IdH[A] private (x: A) extends Apply1[IdW, A]:
+case object IdW extends HKT
+
+case object ListW extends HKT
+
+class IdH[A](x: A) extends Apply[IdW.type, A]:
   type This = A
   override def prj(): This = x
 
-/*
-case class ListW()
-
-def makeListHK[A](x: List[A]): Apply1.Aux[ListW, A, List[A]] = new Apply1[ListW, A]:
+class ListH[A](x: List[A]) extends Apply[ListW.type, A]:
   type This = List[A]
   override def prj(): This = x
-*/
+
+// Example:
+case class Person(F: HKT)(name: Apply[F.type, String], age: Apply[F.type, Int])
+
+trait Monad[brand <: HKT]:
+  def pure[A](x: A): Apply[brand, A]
+  def bind[A, B]
+    (x: Apply[brand, A], f: A => Apply[brand, B]):
+    Apply[brand, B]
+
+case object OptionW extends HKT

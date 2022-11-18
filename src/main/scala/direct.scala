@@ -13,14 +13,16 @@ package hkt.direct
    a sealed trait:
  */
 
-sealed trait Apply[F, A]
+abstract class Apply[F, A]:
+  type This
+  def prj(): This
 
 /* When attempting to translate the `Newtype` signature, we immediately
    encounter a problem. That is, it contains the generic type `'a s`, which
    we would write in Scala as
 
    ```scala
-     trait NewtypeS:
+     trait Newtype:
        type S[A]
        // ...
    ```
@@ -31,7 +33,7 @@ sealed trait Apply[F, A]
    One idea would be to attach the generic to the trait itself:
 
    ```scala
-     trait NewtypeS[A]:
+     trait Newtype[A]:
        type S
        type T
        // ...
@@ -44,22 +46,24 @@ sealed trait Apply[F, A]
    class/trait:
  */
 
+/*
 trait Newtype:
   // The brand. Each instantiation of `Newtype` will create a new brand.
-  type T
+  case object Brand
+  type T = Brand.type
 
-  trait ApplyS[A]:
-    // The fully-realized type, e.g. `List[A]`
-    type S
+  trait Applied[A]:
+    type This
 
-    // Add a new variant to `Apply` corresponding to our brand
-    private case class App(x: S) extends Apply[T, A]
+  private class App[A](val S: Applied[A], x: S.This) extends Apply[T, A]:
+    type This = S.This
+    def prj() = x
 
-    def inj(x: S): Apply[T, A] = App(x)
-    def prj(t: Apply[T, A]): S =
-      t match
-        case App(x) => x
-        case _ => throw new Exception
+  def inj[A](S: Applied[A], x: S.This): Apply[T, A] = App(S, x)
+  def prj[A](S: Applied[A], t: Apply[T, A]): S.This =
+    t match
+      case t: App[A] => t.prj()
+      */
 
 /* The safety of the incomplete match in `prj` is ensured by the generativity
    of trait instantiation. For each extension `W` of `Newtype`, a unique brand
@@ -78,33 +82,55 @@ trait Newtype:
    Now, we can create higher-kinded witnesses by extending `Newtype`:
  */
 
+/*
 object ListW extends Newtype:
   class M[A] extends ApplyS[A]:
     type S = List[A]
 
-object OptionW extends Newtype:
-  class M[A] extends ApplyS[A]:
-    type S = Option[A]
-
 object IdW extends Newtype:
   class M[A] extends ApplyS[A]:
     type S = A
+    */
 
 /* Finally, we can be polymorphic over the `F` parameter to `Apply` to achieve
    higher-kinded polymorphism using only the first-order fragment of Scala:
  */
 
+/*
 class Person[F](var name: Apply[F, String], var age: Apply[F, Int])
+*/
 
-trait MonadW
-
-trait Monad extends Newtype:
-  type T <: MonadW
-
-  def bind[A, B](x: Apply[T, A], f: A => Apply[T, B]): Apply[T, B]
+/* For typeclasses, we can subtrait `Newtype` with the relevant functions:
+ */
 
 /*
-object ListW_ extends Monad:
+trait Monad extends Newtype:
+  def bind[A, B](x: Apply[T, A], f: A => Apply[T, B]): Apply[T, B]
+  def pure[A](x: A): Apply[T, A]
+
+object OptionW extends Monad:
+  class M[A] extends ApplyS[A]:
+    type S = Option[A]
+
   def bind[A, B](x: Apply[T, A], f: A => Apply[T, B]): Apply[T, B] =
-    throw new Exception
-  */
+    (new M[A]).prj(x) match
+      case Some(x) => f(x)
+      case None => (new M[B]).inj(None)
+
+  def pure[A](x: A): Apply[T, A] =
+    (new M[A]).inj(Some(x))
+
+// Note that we must pass the typeclass instance `F` explicitly; it is not
+// enough to enforce a bound on the brand.
+def sequence[A](F: Monad, xs: List[Apply[F.T, A]]): Apply[F.T, List[A]] =
+  xs match
+    case Nil => F.pure(Nil)
+    case x :: xs =>
+      F.bind(x, (x) => F.bind(sequence(F, xs), (xs) => F.pure(x :: xs)))
+
+val t = sequence(OptionW, List((new OptionW.M[Int]).inj(None)))
+*/
+
+/* ## Reflection
+ */
+
