@@ -91,7 +91,6 @@ trait Func:
 
 import hkt.direct._;
 
-
 trait Apply1[F, A]:
   type This
   def prj(): This
