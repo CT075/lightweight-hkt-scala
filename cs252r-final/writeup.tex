@@ -1,0 +1,61 @@
+\documentclass[acmsmall,screen]{acmart}
+\setcopyright{none}
+\copyrightyear{2022}
+\acmYear{2022}
+\acmDOI{}
+
+\citestyle{acmauthoryear}
+
+\usepackage{fancyhdr}
+
+\begin{document}
+
+\title{Lightweight Higher-kinded Polymorphism in DOT}
+
+\author{Cameron Wong}
+\email{cwong@g.harvard.edu}
+\affiliation{%
+  \institution{Harvard University}
+  \country{USA}
+}
+
+\renewcommand{\shortauthors}{Cameron Wong}
+
+\settopmatter{printacmref=false}
+\settopmatter{printfolios=true}
+\renewcommand\footnotetextcopyrightpermission[1]{}
+\pagestyle{fancy}
+\fancyfoot{}
+\fancyfoot[R]{CS252R (Fall 2022)}
+\fancypagestyle{firstfancy}{
+  \fancyhead{}
+  \fancyhead[R]{CS252R (Fall 2022)}
+  \fancyfoot{}
+}
+\makeatletter
+\let\@authorsaddresses\@empty
+\makeatother
+
+\begin{abstract}
+  TODO
+\end{abstract}
+
+\keywords{
+  type constructor polymorphism,
+  higher-kinded types,
+  higher-order genericity,
+  Scala, dotty, DOT, dependent object types}
+
+\maketitle
+\thispagestyle{firstfancy}
+
+\section{Introduction}
+
+\section{Future Work}
+
+\begin{acks}
+\end{acks}
+
+\bibliographystyle{ACM-Reference-Format}
+%\bibliography{paper}
+\end{document}

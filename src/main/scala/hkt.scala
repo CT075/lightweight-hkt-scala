@@ -130,8 +130,52 @@ trait Apply[F, A]:
   type This
   def prj(): This
 
-trait HKT
+trait Monad[F, A] extends Apply[F, A]:
+  def bind[B](f: A => Apply[F, B]): Apply[F, B]
 
+object ListW:
+  case object Brand
+  type T = Brand.type
+
+  trait Applied[A]:
+    type This = List[A]
+
+  class Inj[A](val x: List[A]) extends Apply[T, A], Applied[A]:
+    type This = List[A]
+    override def prj(): This = x
+
+object OptionW:
+  case object Brand
+  type T = Brand.type
+
+  trait Applied[A]:
+    type This = Option[A]
+
+  class Inj[A](val x: Option[A]) extends Apply[T, A], Monad[T, A], Applied[A]:
+    type This = Option[A]
+    override def prj(): This = x
+    override def bind[B](f: A => Apply[T, B]): Apply[T, B] =
+      x match {
+        case Some(x) => f(x)
+        case None => new Inj[B](None)
+      }
+
+/*
+trait Monad[brand]:
+  def pure[A](x: A): Apply[brand, A]
+  def bind[A, B](x: Apply[brand, A], f: A => Apply[brand, B]): Apply[brand, B]
+
+object OptionMonad extends Monad[OptionW.T]:
+  override def pure[A](x: A) = new OptionW.Inj[A](Some(x))
+  override def bind[A, B]
+    (x: Apply[OptionW.T, A], f: A => Apply[OptionW.T, B]): Apply[OptionW.T, B]
+  =
+    x.prj() match {
+      case Some(x) => f(x)
+      case None => new OptionW.Inj[B](None)
+    }
+  */
+/*
 case object IdW extends HKT
 
 case object ListW extends HKT
@@ -154,3 +198,4 @@ trait Monad[brand <: HKT]:
     Apply[brand, B]
 
 case object OptionW extends HKT
+*/
