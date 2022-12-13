@@ -6,11 +6,58 @@
 
 \citestyle{acmauthoryear}
 
+\usepackage{listings}
 \usepackage{fancyhdr}
+\usepackage{mathpartir}
+\usepackage{bussproofs}
+\usepackage[page]{appendix}
+
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstdefinestyle{ocaml}{
+  language=[Objective]caml,
+  aboveskip=3mm,
+  belowskip=3mm,
+  showstringspaces=false,
+  columns=flexible,
+  basicstyle={\small\ttfamily},
+  numbers=none,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue},
+  commentstyle=\color{dkgreen},
+  stringstyle=\color{mauve},
+  frame=single,
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=2,
+  literate={'"'}{\textquotesingle "\textquotesingle}3
+}
+
+\lstdefinestyle{scala}{
+  language=scala,
+  aboveskip=3mm,
+  belowskip=3mm,
+  showstringspaces=false,
+  columns=flexible,
+  basicstyle={\small\ttfamily},
+  numbers=none,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue},
+  commentstyle=\color{dkgreen},
+  stringstyle=\color{mauve},
+  frame=single,
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=2,
+}
+
+\newcommand{\DOTw}{\text{DOT}$^\omega$}
 
 \begin{document}
 
-\title{Lightweight Higher-kinded Polymorphism in DOT}
+\title{Lightweight Higher-kinded Dependent Object Types}
 
 \author{Cameron Wong}
 \email{cwong@g.harvard.edu}
@@ -37,25 +84,286 @@
 \makeatother
 
 \begin{abstract}
-  TODO
+  Scala, like many other functional programming languages, has first-class
+  support for higher-kinded type abstraction. However, its core calculus
+  Dependent Object Types (DOT) does not, complicating the design and
+  implementation of the feature in modern Scala compilers.
+
+  We show that DOT is expressive enough to encode higher-kinded polymorphism
+  as-is. We demonstrate an embedding of higher-kinded type-lambdas into DOT via
+  defunctionalization.
 \end{abstract}
 
 \keywords{
   type constructor polymorphism,
   higher-kinded types,
   higher-order genericity,
-  Scala, dotty, DOT, dependent object types}
+  Scala}
 
 \maketitle
 \thispagestyle{firstfancy}
 
 \section{Introduction}
 
+Higher-kinded types enable a greater level of abstraction by allowing code to
+be generic over type \emph{constructors} rather than fully-realized types. For
+example, a programmer may design a data structure that abstracts over a
+container type to enable variants of the same structure to share the same
+definition.
+
+Like many other functional languages, Scala supports higher-kinded types.
+However, the DOT calculus (DOT) \cite{Amin_Grutter_Odersky_Rompf_Stucki_2016}
+underlying the Scala 3 Dotty compiler does not. This means that there is no
+formal model of how higher-kinded types interact with Scala's other features in
+full generality, making it difficult to reason about the correctness of their
+implementation in Dotty, which uses an extension to DOT that has not been
+proven sound. As Scala's standard library makes heavy use of higher-kinded
+types, any bug has the potential to impact large amounts of downstream code.
+
+\subsection{Contributions}
+
+We contribute the following:
+
+\begin{itemize}
+  \item We describe an idiomatic encoding of higher-kinded polymorphism into
+    surface-level Scala using only rank-1 generics and traits (Section
+    \ref{sec::surface}). This serves to introduce the embedding using
+    high-level, constructs rather than bury the lede in the weeds of DOT
+    proper.
+  \item We introduce \DOTw{}, a minimal extension of DOT supporting type
+    lambdas and explicit kinds (Section \ref{sec::dotw}).
+  \item We establish a type-directed translation from \DOTw{} to plain DOT
+    (Section \ref{sec::trans}).
+\end{itemize}
+
+\section{Background}
+
+\subsection{Higher-kinded types}
+
+We motivate higher-kinded types with two examples.
+
+\subsubsection{Higher-kinded Data}
+
+Our first example was first presented by \cite{macguire_hkd}.
+
+Consider a datatype of \texttt{Person}, containing a name and an age.
+Objects in our program may be populated by a source, such as a webform, in
+which individual fields may be malformed without invalidating the data
+structure as a whole. However, within the program, we would like to ensure
+that all \texttt{Person}s have all valid fields. A naive modeling might use
+two separate classes (figure \ref{fig::person-bad}).
+
+\begin{figure}[ht]
+  \begin{lstlisting}[style=scala]
+  class Person:
+    var name: String
+    var age: Int
+
+  class UnvalidatedPerson:
+    var name: Option[String]
+    var age: Option[Int]
+  \end{lstlisting}
+  \caption{Two datatypes, related only in name}\label{fig::person-bad}
+\end{figure}
+
+However, this is quite an unsatisfying pair of definitions. The types
+\texttt{Person} and \texttt{UnvalidatedPerson} are only nominally related,
+meaning that if a new field is added, \emph{both} types need to be updated,
+creating a maintenance burden. Furthermore, although the relationship is
+obvious, any updates will need to be done manually, without compiler
+assistance, introducing the potential for human error.
+
+Both \texttt{Person} and \texttt{UnvalidatedPerson} have the same field
+names and "moral" types, differing only in the "shape" of said field type
+(\texttt{T} versus \texttt{Option[T]}). This suggests that, if we could
+abstract over that "shape", we could allow \texttt{Person} and
+\texttt{UnvalidatedPerson} to share a skeleton \texttt{PersonImpl},
+allowing the compiler to enforce the relationship between them.
+
+\begin{figure}[ht]
+  \begin{lstlisting}[style=scala]
+  class PersonImpl[F[_]]:
+    var name: F[String]
+    var age: F[Int]
+
+  UnvalidatedPerson = Person[Option]
+  Person = Person[Id] // where Id[T] = T
+  \end{lstlisting}
+  \caption{Unifying two nominally-related datatypes via higher-kinded
+  types}
+\end{figure}
+
+Higher-kinded types provide exactly this mechanism, in which
+\texttt{PersonImpl} takes a type-level function \texttt{F} and applies it to
+its two fields to produce the final data structure.
+
+\subsubsection{Typeclasses}
+
+Our second example is the venerable monad interface.
+
+TODO
+
+\subsection{Type abstraction in DOT}
+
+DOT does not actually have primitive generics at all. Instead, a parameterized
+type like \texttt{List[T]} is represented with type members:
+\begin{lstlisting}[style=scala]
+  class List:
+    type T
+\end{lstlisting}
+
+with specific instantiations of the parameter \texttt{T} being provided via
+specialization:
+\begin{lstlisting}[style=scala]
+  class ListInt extends List:
+    type T = Int
+\end{lstlisting}
+
+However, previous attempts at developing a similar encoding for higher kinds by
+Odersky et al in the implementation of Dotty \cite{OderskyDotty} were all
+deemed unsatisfactory for a variety of reasons.
+
+\subsection{Defunctionalization}
+
+The problem of abstracting over higher-kinded type expressions in a language
+with only first-order type variables is well-known. Yallop
+\cite{Yallop_White_2014} demonstrated how \emph{defunctionalization} at the
+type level could be used to represent higher-kinded programs in OCaml. His
+technique was to introduce an abstract type constructor
+\begin{lstlisting}[style=ocaml]
+  type ('a, 'f) app
+\end{lstlisting}
+
+where the type expression \texttt{(s, t) app} represents the application of
+the type expression \texttt{t} to the type expression \texttt{s}
+\footnote{Recall that OCaml type expressions are written "backwards" -- in the
+type \texttt{t list}, the argument \texttt{t} comes first. Likewise, Yallop
+chose to use the same convention in the ordering of the arguments to
+\texttt{app}.}. Importantly, the expression \texttt{t} here is a proper type --
+that is, of kind~$*$. Type constructors are associated with an uninhabited
+phantom type, which Yallop called the \emph{brand}. Beta-reduction does not
+occur automatically but is performed explicitly via introduction and eliminator
+functions for each brand. For example, the constructor \emph{list} would have a
+corresponding module containing the brand \emph{List.t} and projection and
+injection functions:
+\begin{lstlisting}[style=ocaml]
+  module List : sig
+    type t
+    val inj : 'a list -> ('a, t) app
+    val prj : ('a, t) app -> 'a list
+  end
+\end{lstlisting}
+
+Now, abstraction over type constructors can be expressed by abstracting over
+brands, e.g.
+\begin{lstlisting}[style=ocaml]
+  type 'f monad =
+    { pure : 'a . 'a -> ('a, 'f) app
+    ; bind : 'a 'b . ('a, 'f) app -> ('a -> ('b, 'f) app) -> ('b, 'f) app
+    }
+\end{lstlisting}
+
+TODO: talk about how \texttt{app} is defined
+
+\section{The surface-level embedding}\label{sec::surface}
+
+In this section, we demonstrate how a similar transformation can be applied in
+surface-level Scala. Unlike OCaml, Scala natively supports higher-kinded
+polymorphism, so we must ensure that we do not cheat by using "disallowed"
+features. Specifically, we must ensure that all instances of polymorphic types
+\emph{and} abstract type members occur at kind~$*$. Other forms of first-order
+polymorphism (namely, polymorphic classes and traits) are allowed, as these can
+be expressed in DOT.
+
+Our first order of business is to define the trait \texttt{Apply[F,A]},
+corresponding to the OCaml type \texttt{('a, 'f) app}. In OCaml, Yallop needed
+some way to associate the brand with the fully-realized type, for which he used
+OCaml's module system. Thankfully for us, Scala's type members provide exactly
+that functionality:
+
+\begin{lstlisting}[style=scala]
+  trait Apply[F,A]:
+    type This
+    def prj(): This
+\end{lstlisting}
+
+The line of interest is the abstract type member \texttt{This}, which can use
+the bound parameter \texttt{A} to build the fully-normalized type.
+
+An instantiation of this trait for \texttt{List} and \texttt{Option} is shown
+in figure \ref{fig::instantiation}.
+
+\begin{figure}[ht]
+  \begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[style=scala]
+  object ListW:
+    case object Brand
+    type T = Brand.type
+
+    class Inj[A](val x: List[A]) extends Apply[T, A]:
+      type This = List[A]
+      override def prj(): This = x
+    \end{lstlisting}
+  \end{minipage}
+  \hfill
+  \begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[style=scala]
+  object OptionW:
+    case object Brand
+    type T = Brand.type
+
+    class Inj[A](val x: List[A]) extends Apply[T, A]:
+      type This = Option[A]
+      override def prj(): This = x
+    \end{lstlisting}
+  \end{minipage}
+  \caption{Two instantiations of \texttt{Apply}.}\label{fig::instantiation}
+\end{figure}
+
+\subsection{Examples}
+
+We can now easily represent higher-kinded data by abstracting over the brand:
+\begin{lstlisting}[style=scala]
+  class PersonImpl[F]:
+    var name: Apply[F, String]
+    var age: Apply[F, Int]
+
+  type UnvalidatedPerson = PersonImpl[OptionW.T]
+  type Person = PersonImpl[IdW.T]
+\end{lstlisting}
+
+Defining typeclass constraints, like the monad interface, can be done by
+further extending \texttt{Apply}:
+\begin{lstlisting}[style=scala]
+  trait Monad[F, A] extends Apply[F, A]:
+    def pure(x: A): Apply[F, A]
+    def bind[B](f: A => Apply[F, B]): Apply[F, B]
+\end{lstlisting}
+
+\subsection{Reflection}
+
+\section{\DOTw{}}\label{sec::dotw}
+
+\section{}\label{sec::trans}
+
 \section{Future Work}
 
+\subsubsection*{Metatheory of \DOTw{}}
+
+\subsubsection*{Mechanisation}
+
+\subsubsection*{Implementation details}
+
 \begin{acks}
+  Thanks to Prof. Amin for graciously allowing me to change my final project
+  after my initial proposal didn't work.
 \end{acks}
 
 \bibliographystyle{ACM-Reference-Format}
-%\bibliography{paper}
+\typeout{}
+\bibliography{paper}
+
+\begin{appendices}
+  \section{DOT, full rules}
+\end{appendices}
 \end{document}
