@@ -1,0 +1,65 @@
+@mastersthesis {amin2016dependent,
+	title = {Dependent Object Types},
+	year = {2016},
+	note = {(code)},
+	school = {EPFL},
+	type = {PhD thesis},
+	url = {https://infoscience.epfl.ch/record/223518},
+	author = {Amin, Nada}
+}
+
+@inbook{Amin_Grutter_Odersky_Rompf_Stucki_2016, place={Cham}, series={Lecture notes in computer science}, title={The essence of dependent object types}, volume={9600}, ISBN={978-3-319-30935-4}, DOI={10.1007/978-3-319-30936-1_14}, abstractNote={Focusing on path-dependent types, the paper develops foundations for Scala from first principles. Starting from a simple calculus D-<: of dependent functions, it adds records, intersections and recursion to arrive at DOT, a calculus for dependent object types. The paper shows an encoding of System F with subtyping in D-<: and demonstrates the expressiveness of DOT by modeling a range of Scala constructs in it.}, booktitle={A list of successes that can change the world}, publisher={Springer International Publishing}, author={Amin, Nada and Grütter, Samuel and Odersky, Martin and Rompf, Tiark and Stucki, Sandro}, editor={Lindley, Sam and McBride, Conor and Trinder, Phil and Sannella, DonEditors}, year={2016}, pages={249–272}, collection={Lecture notes in computer science}}
+
+@inbook{OderskyDotty, place={New York, New York, USA}, title={Implementing higher-kinded types in Dotty}, ISBN={9781450346481}, DOI={10.1145/2998392.2998400}, abstractNote={dotty  is a new, experimental Scala compiler based on DOT, the calculus of Dependent Object Types. Higher-kinded types are a natural extension of first-order lambda calculus, and have been a core construct of Haskell and Scala. As long as such types are just partial applications of generic classes, they can be given a meaning in DOT relatively straightforwardly. But general lambdas on the type level require extensions of the DOT calculus to be expressible. This paper is an experience report where we describe and discuss four implementation strategies that we have tried out in the last three years. Each strategy was fully implemented in the  dotty  compiler. We discuss the usability and expressive power of each scheme, and give some indications about the amount of implementation difficulties encountered.}, booktitle={Proceedings of the 2016 7th ACM SIGPLAN Symposium on Scala - SCALA 2016}, publisher={ACM Press}, author={Odersky, Martin and Martres, Guillaume and Petrashko, Dmitry}, year={2016}, month={Oct}, pages={51–60}}
+
+@inproceedings{Reynolds1972,
+author = {Reynolds, John C.},
+title = {Definitional Interpreters for Higher-Order Programming Languages},
+year = {1972},
+isbn = {9781450374927},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/800194.805852},
+doi = {10.1145/800194.805852},
+abstract = {Higher-order programming languages (i.e., languages in which procedures or labels can occur as values) are usually defined by interpreters which are themselves written in a programming language based on the lambda calculus (i.e., an applicative language such as pure LISP). Examples include McCarthy's definition of LISP, Landin's SECD machine, the Vienna definition of PL/I, Reynolds' definitions of GEDANKEN, and recent unpublished work by L. Morris and C. Wadsworth. Such definitions can be classified according to whether the interpreter contains higher-order functions, and whether the order of application (i.e., call-by-value versus call-by-name) in the defined language depends upon the order of application in the defining language. As an example, we consider the definition of a simple applicative programming language by means of an interpreter written in a similar language. Definitions in each of the above classifications are derived from one another by informal but constructive methods. The treatment of imperative features such as jumps and assignment is also discussed.},
+booktitle = {Proceedings of the ACM Annual Conference - Volume 2},
+pages = {717–740},
+numpages = {24},
+keywords = {Order of application, Continuation, Higher-order function, GEDANKEN, Closure, Lambda calculus, LISP, PAL, Interpreter, Reference, Applicative language, Programming language, SECD machine, Language definition, J-operator},
+location = {Boston, Massachusetts, USA},
+series = {ACM '72}
+}
+
+@inproceedings{Stucki2017HigherOrderSW,
+  title={Higher-Order Subtyping with Type Intervals},
+  author={Sandro Stucki},
+  year={2017}
+}
+
+@inbook{Yallop_White_2014, place={Cham}, series={Lecture notes in computer science}, title={Lightweight Higher-Kinded Polymorphism}, volume={8475}, ISBN={978-3-319-07150-3}, DOI={10.1007/978-3-319-07151-0_8}, booktitle={Functional and logic programming}, publisher={Springer International Publishing}, author={Yallop, Jeremy and White, Leo}, editor={Codish, Michael and Sumii, EijiroEditors}, year={2014}, pages={119–135}, collection={Lecture notes in computer science}}
+
+@misc{macguire_hkd,
+  author = {Macguire, Sandy},
+  year = {2018},
+  title = {Higher-Kinded Data},
+  howpublished = {Blog article}
+}
+
+@article{CraryFAMC,
+author = {Crary, Karl},
+title = {Fully Abstract Module Compilation},
+year = {2019},
+issue_date = {January 2019},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+volume = {3},
+number = {POPL},
+url = {https://doi.org/10.1145/3290323},
+doi = {10.1145/3290323},
+abstract = {We give a translation suitable for compilation of modern module calculi supporting sealing, generativity, translucent signatures, applicative functors, higher-order functors and/or first-class modules. Ours is the first module-compilation translation with a dynamic correctness theorem. The theorem states that the translation produces target terms that are contextually equivalent to the source, in an appropriate sense. A corollary of the theorem is that the translation is fully abstract. Consequently, the translation preserves all abstraction present in the source. In passing, we also show that modules are a definitional extension of the underlying core language. All of our proofs are formalized in Coq.},
+journal = {Proc. ACM Program. Lang.},
+month = {jan},
+articleno = {10},
+numpages = {29},
+keywords = {full abstraction, Modules, phase separation}
+}

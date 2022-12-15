@@ -32,7 +32,8 @@
   breaklines=true,
   breakatwhitespace=true,
   tabsize=2,
-  literate={'"'}{\textquotesingle "\textquotesingle}3
+  literate={'"'}{\textquotesingle "\textquotesingle}3,
+  escapeinside={`}{`}
 }
 
 \lstdefinestyle{scala}{
@@ -51,6 +52,7 @@
   breaklines=true,
   breakatwhitespace=true,
   tabsize=2,
+  escapeinside={`}{`}
 }
 
 \newcommand{\DOTw}{\text{DOT}$^\omega$}
@@ -89,9 +91,8 @@
   Dependent Object Types (DOT) does not, complicating the design and
   implementation of the feature in modern Scala compilers.
 
-  We show that DOT is expressive enough to encode higher-kinded polymorphism
-  as-is. We demonstrate an embedding of higher-kinded type-lambdas into DOT via
-  defunctionalization.
+  We demonstrate a novel encoding of higher-kinded types into Scala using only
+  features known to be expressible in DOT via defunctionalization.
 \end{abstract}
 
 \keywords{
@@ -117,41 +118,48 @@ underlying the Scala 3 Dotty compiler does not. This means that there is no
 formal model of how higher-kinded types interact with Scala's other features in
 full generality, making it difficult to reason about the correctness of their
 implementation in Dotty, which uses an extension to DOT that has not been
-proven sound. As Scala's standard library makes heavy use of higher-kinded
-types, any bug has the potential to impact large amounts of downstream code.
+proven sound \cite{OderskyDotty}.
 
-\subsection{Contributions}
+What is so difficult about extending DOT's soundness proof to include
+higher-kinded generics? While a full exploration of DOT and its metatheory is
+beyond the scope of this paper, one reason is that DOT does not actually have
+primitive generics at all. Instead, a parameterized type like \texttt{List[T]}
+is represented with type members:
+\begin{lstlisting}[style=scala]
+  class List:
+    type T
+    // further definitions, methods, etc.
+\end{lstlisting}
 
-We contribute the following:
+with specific instantiations of the parameter \texttt{T} being provided via
+specialization:
+\begin{lstlisting}[style=scala]
+  class ListInt extends List:
+    type T = Int
+    // etc.
+\end{lstlisting}
 
-\begin{itemize}
-  \item We describe an idiomatic encoding of higher-kinded polymorphism into
-    surface-level Scala using only rank-1 generics and traits (Section
-    \ref{sec::surface}). This serves to introduce the embedding using
-    high-level, constructs rather than bury the lede in the weeds of DOT
-    proper.
-  \item We introduce \DOTw{}, a minimal extension of DOT supporting type
-    lambdas and explicit kinds (Section \ref{sec::dotw}).
-  \item We establish a type-directed translation from \DOTw{} to plain DOT
-    (Section \ref{sec::trans}).
-\end{itemize}
+In this way, abstract type members can be used as a form of first-order
+polymorphism, where expressions and types can refer to type variables of
+kind~$*$, the kind of regular types.
 
-\section{Background}
+Our contribution is to demonstrate an idiomatic encoding of higher-kinded
+polymorphism using only such first-order features, in the hopes that this may
+direct further efforts to bridge the gap between Scala and DOT.
 
-\subsection{Higher-kinded types}
+\section{Higher-kinded types}
 
 We motivate higher-kinded types with two examples.
 
-\subsubsection{Higher-kinded Data}
+\subsubsection*{Higher-kinded Data}
 
-Our first example was first presented by \cite{macguire_hkd}.
-
-Consider a datatype of \texttt{Person}, containing a name and an age.
-Objects in our program may be populated by a source, such as a webform, in
-which individual fields may be malformed without invalidating the data
-structure as a whole. However, within the program, we would like to ensure
-that all \texttt{Person}s have all valid fields. A naive modeling might use
-two separate classes (figure \ref{fig::person-bad}).
+This example was first presented by \cite{macguire_hkd}. Consider a datatype of
+\texttt{Person}, containing a name and an age. Objects in our program may be
+populated by a source, such as a webform, in which individual fields may be
+malformed without invalidating the data structure as a whole. However, within
+the program, we would like to ensure that all \texttt{Person}s have all valid
+fields. A naive modeling might use two separate classes (figure
+\ref{fig::person-bad}).
 
 \begin{figure}[ht]
   \begin{lstlisting}[style=scala]
@@ -166,12 +174,12 @@ two separate classes (figure \ref{fig::person-bad}).
   \caption{Two datatypes, related only in name}\label{fig::person-bad}
 \end{figure}
 
-However, this is quite an unsatisfying pair of definitions. The types
-\texttt{Person} and \texttt{UnvalidatedPerson} are only nominally related,
-meaning that if a new field is added, \emph{both} types need to be updated,
-creating a maintenance burden. Furthermore, although the relationship is
-obvious, any updates will need to be done manually, without compiler
-assistance, introducing the potential for human error.
+This is quite an unsatisfying pair of definitions. The types \texttt{Person}
+and \texttt{UnvalidatedPerson} are only nominally related, meaning that if a
+new field is added, \emph{both} types need to be updated, creating a
+maintenance burden. Furthermore, although the relationship is obvious, any
+updates will need to be done manually, without compiler assistance, introducing
+the potential for human error.
 
 Both \texttt{Person} and \texttt{UnvalidatedPerson} have the same field
 names and "moral" types, differing only in the "shape" of said field type
@@ -187,7 +195,7 @@ allowing the compiler to enforce the relationship between them.
     var age: F[Int]
 
   UnvalidatedPerson = Person[Option]
-  Person = Person[Id] // where Id[T] = T
+  Person = Person[Id]
   \end{lstlisting}
   \caption{Unifying two nominally-related datatypes via higher-kinded
   types}
@@ -197,52 +205,133 @@ Higher-kinded types provide exactly this mechanism, in which
 \texttt{PersonImpl} takes a type-level function \texttt{F} and applies it to
 its two fields to produce the final data structure.
 
-\subsubsection{Typeclasses}
+\subsubsection*{Higher-ranked typeclasses}
 
-Our second example is the venerable monad interface.
-
-TODO
-
-\subsection{Type abstraction in DOT}
-
-DOT does not actually have primitive generics at all. Instead, a parameterized
-type like \texttt{List[T]} is represented with type members:
+Our second example is the venerable monad interface. A type constructor
+\texttt{M} is a monad if it admits the following functions:
 \begin{lstlisting}[style=scala]
-  class List:
-    type T
+  def pure[A](x: A): M[A]
+  def bind[A, B](x: M[A], f: A => M[B]): M[B]
+\end{lstlisting}
+following the monad laws.
+
+How can we \emph{abstract} over all possible monads? A naive attempt at
+encoding the above functions as a trait might look as follows:
+\begin{lstlisting}[style=scala]
+  trait Monad[A]:
+    def bind[B](f: A => /* ??? */): /* ??? */
 \end{lstlisting}
 
-with specific instantiations of the parameter \texttt{T} being provided via
-specialization:
+However, an issue arises when attempting to represent the type \texttt{M[B]},
+as we have no way to refer to the underlying type constructor \texttt{M}, only
+the fully-applied \texttt{M[A]} implicitly as \texttt{self}.
+
+With higher-kinded type members, however, we can solve this directly:
 \begin{lstlisting}[style=scala]
-  class ListInt extends List:
-    type T = Int
+  trait MonadOps:
+    type M[_]
+    def pure[A](x: A): M[A]
+    def bind[A, B](x: M[A], f: A => M[B]): M[B]
 \end{lstlisting}
 
-However, previous attempts at developing a similar encoding for higher kinds by
-Odersky et al in the implementation of Dotty \cite{OderskyDotty} were all
-deemed unsatisfactory for a variety of reasons.
+Note that this trait must be instantiated on a separate object than the type
+\texttt{M} itself, and that object must be provided as an additional argument
+to any functions that are monad-agnostic. For example,
+\begin{lstlisting}[style=scala]
+  def select[A](
+      ops: MonadOps,
+      mb: ops.M[Boolean],
+      left: ops.M[A],
+      right: ops.M[A]): ops.M[Unit] =
+    ops.bind(mb, (b : Boolean) => if b then left else right)
+\end{lstlisting}
 
-\subsection{Defunctionalization}
+Of particular interest is that the function's type signature is able to refer
+to the type member \texttt{M} of the argument \texttt{ops}. The ability to use
+ad-hoc polymorphism via explicit dictionary-passing in this way is a major
+strength of Scala and path-dependent types.
+
+\section{Defunctionalization}
 
 The problem of abstracting over higher-kinded type expressions in a language
 with only first-order type variables is well-known. Yallop
 \cite{Yallop_White_2014} demonstrated how \emph{defunctionalization} at the
-type level could be used to represent higher-kinded programs in OCaml. His
-technique was to introduce an abstract type constructor
+type level could be used to represent higher-kinded programs in OCaml.
+
+Defunctionalization was initially introduced by Reynolds as a technique to
+express higher-order \emph{functions} in a first-order language
+\cite{Reynolds1972}. To perform this transformation, we replace all occurrences
+of first-class functions with regular values, which can be eliminated with a
+special \texttt{apply} function. Consider a short program using first-class
+functions (figure \ref{fig::defun-pre}).
+
+\begin{figure}
+  \begin{lstlisting}[style=scala]
+  def map[A, B](f: A => B, l: List[A]) : List[B] =
+    l match
+      case Nil => Nil
+      case Cons(x, xs) => Cons(f(x), map(f, xs))
+
+  val foo = map(((x: Int) => x+1), nums)
+  val bar = map(((y: Bool) => !y), bools)
+  \end{lstlisting}
+  \caption{A simple program using higher-order values}\label{fig::defun-pre}
+\end{figure}
+
+To defunctionalize this program, we define a data type with a variant for each
+function value used, in this case once for \texttt{foo} and once for
+\texttt{bar}. Then, applications are replaced with calls to a specialized
+\texttt{apply} function (figure \ref{fig::defun-post}).
+
+\begin{figure}
+  \begin{lstlisting}[style=scala]
+  sealed trait Fun[A,B]:
+    def apply(input: A): B
+
+  object Succ extends Fun[Int, Int]:
+    def apply(x: Int): Int = x+1
+
+  object Neg extends Fun[Bool, Bool]:
+    def apply(y: Bool): Bool = !y
+
+  def map[A, B](f: Fun[A,B], l: List[A]) : List[B] =
+    l match
+      case Nil => Nil
+      case Cons(x, xs) => Cons(f.apply(x), map(f, xs))
+
+  val foo = map(Succ, nums)
+  val bar = map(Neg, bools)
+  \end{lstlisting}
+  \caption{A defunctionalized program}\label{fig::defun-post}
+\end{figure}
+
+The argument to \texttt{map} is now an ordinary, non-function object, meaning
+the program as a whole requires no higher-order values\footnote{Classically,
+the \texttt{Fun} trait would be a variant type, with the \texttt{apply}
+function dispatching via pattern matching instead of inheritance.}!
+
+\subsection{\texttt{higher} in OCaml}
+
+At the type level, things work similarly. Yallop wrote a library, which he
+named \texttt{higher}, for higher-kinded programming in OCaml. As we are
+re-presenting his work, all code samples in this section will also be in
+OCaml.
+
+We introduce an abstract type constructor
 \begin{lstlisting}[style=ocaml]
   type ('a, 'f) app
 \end{lstlisting}
 
+\noindent
 where the type expression \texttt{(s, t) app} represents the application of
 the type expression \texttt{t} to the type expression \texttt{s}
-\footnote{Recall that OCaml type expressions are written "backwards" -- in the
-type \texttt{t list}, the argument \texttt{t} comes first. Likewise, Yallop
-chose to use the same convention in the ordering of the arguments to
-\texttt{app}.}. Importantly, the expression \texttt{t} here is a proper type --
-that is, of kind~$*$. Type constructors are associated with an uninhabited
-phantom type, which Yallop called the \emph{brand}. Beta-reduction does not
-occur automatically but is performed explicitly via introduction and eliminator
+\footnote{OCaml type expressions are written "backwards" -- in the type
+\texttt{t list}, the argument \texttt{t} comes first. Yallop chose to use the
+same convention in the ordering of the arguments to \texttt{app}.}.
+Importantly, the expression \texttt{t} here is a proper type -- that is, of
+kind~$*$. Type constructors are associated with an uninhabited phantom type,
+which Yallop called the \emph{brand}. Beta-reduction does not occur
+automatically but is performed explicitly via introduction and eliminator
 functions for each brand. For example, the constructor \emph{list} would have a
 corresponding module containing the brand \emph{List.t} and projection and
 injection functions:
@@ -258,28 +347,70 @@ Now, abstraction over type constructors can be expressed by abstracting over
 brands, e.g.
 \begin{lstlisting}[style=ocaml]
   type 'f monad =
-    { pure : 'a . 'a -> ('a, 'f) app
-    ; bind : 'a 'b . ('a, 'f) app -> ('a -> ('b, 'f) app) -> ('b, 'f) app
+    { pure : `$\forall$`'a . 'a -> ('a, 'f) app
+    ; bind : `$\forall$`'a 'b . ('a, 'f) app -> ('a -> ('b, 'f) app) -> ('b, 'f) app
     }
 \end{lstlisting}
 
-TODO: talk about how \texttt{app} is defined
+One concern with defunctionalization is that it is classically a whole-program
+transformation -- the single sum type \texttt{app} represents \emph{all}
+higher-order type constructors in the program. As an intermediate compiler
+representation, this is no obstacle, but \texttt{higher} is intended for use
+as an end-user library, and it would not be ergonomic to require that the
+programmer know all higher-kinded occurrences up front.
 
-\section{The surface-level embedding}\label{sec::surface}
+How is the mysterious type \texttt{app} defined? Yallop provided two
+implementations and alluded to a third, using an unsafe cast, an extensible
+variant type and type families respectively. We detail only the extensible
+variant approach, as it most closely resembles the equivalent Scala
+construction.
+
+\begin{figure}[ht]
+  \begin{lstlisting}[style=ocaml]
+  type ('a, 'f) app = ..
+
+  module Newtype(T : sig type 'a t end)() = struct
+    type 'a s = 'a T.t
+    type t
+    type (_, _) app += App : 'a s -> ('a, t) app
+    let inj v = App v
+    let prj (App v) = v
+  end
+  \end{lstlisting}
+  \caption{Implementing \texttt{higher} with open variants}
+    \label{fig::higher-impl}
+\end{figure}
+
+Figure \ref{fig::higher-impl} shows this implementation of \texttt{higher}.
+The first line declares that \texttt{app} is an open data type whose
+constructors will be declared later. Next is the \texttt{Newtype} functor
+(a module-level function) which takes, as input, a module declaring a
+generic type \texttt{'a t}, which extends the \texttt{app} type with a new
+variant \texttt{App} mapping \texttt{'a s} to \texttt{('a, t) app}. The
+\texttt{prj} and \texttt{inj} functions then use \texttt{App}. Note that the
+match in the \texttt{prj} function is technically inexhaustive, relying on the
+fact that \texttt{t} is fresh per invocation of \texttt{Newtype} to guarantee a
+match in practice\footnote{It is also important to disallow any downstream
+clients from extending \texttt{app} via OCaml's type privacy controls;
+otherwise a user may manually define a new constructor with the same type as
+\texttt{App}.}.
+
+\subsection{From OCaml to Scala}\label{sec::surface}
 
 In this section, we demonstrate how a similar transformation can be applied in
 surface-level Scala. Unlike OCaml, Scala natively supports higher-kinded
-polymorphism, so we must ensure that we do not cheat by using "disallowed"
-features. Specifically, we must ensure that all instances of polymorphic types
-\emph{and} abstract type members occur at kind~$*$. Other forms of first-order
-polymorphism (namely, polymorphic classes and traits) are allowed, as these can
-be expressed in DOT.
+polymorphism, so we must ensure that we do not cheat by trivially using the
+thing we seek to encode! Specifically, we must ensure that all instances of
+polymorphic types \emph{and} abstract type members occur at kind~$*$. Other
+forms of first-order polymorphism (namely, polymorphic classes and traits) are
+allowed, as these can be expressed in DOT.
 
-Our first order of business is to define the trait \texttt{Apply[F,A]},
-corresponding to the OCaml type \texttt{('a, 'f) app}. In OCaml, Yallop needed
-some way to associate the brand with the fully-realized type, for which he used
-OCaml's module system. Thankfully for us, Scala's type members provide exactly
-that functionality:
+The most important part of this translation is the trait \texttt{Apply[F,A]},
+corresponding to the OCaml type \texttt{('a, 'f) app}. In OCaml, we used
+generalized algebraic datatypes to associate the underlying \texttt{'a T.t}
+with the defunctionalized \texttt{('a, t) app}, using pattern matching to
+define projection and injection. In Scala, we can use type members for this
+purpose:
 
 \begin{lstlisting}[style=scala]
   trait Apply[F,A]:
@@ -287,14 +418,20 @@ that functionality:
     def prj(): This
 \end{lstlisting}
 
-The line of interest is the abstract type member \texttt{This}, which can use
-the bound parameter \texttt{A} to build the fully-normalized type.
+This definition has a few key differences from the OCaml implementation.
+Instead of encapsulating the type in a module, we attach the projection
+function to the object itself. Also of note is the the abstract type member
+\texttt{This}, which can refer to the bound parameter \texttt{A} and represents
+the fully-realized type. Finally, if the trait is not sealed, we are
+automatically extensible, allowing us to easily add new type constructors and
+their brands. This is a double-edged sword, as we will see in section
+\ref{sec::reflection}.
 
-An instantiation of this trait for \texttt{List} and \texttt{Option} is shown
-in figure \ref{fig::instantiation}.
+Instantiations of this trait for \texttt{List} and \texttt{Option} are shown in
+figure \ref{fig::instantiation}.
 
 \begin{figure}[ht]
-  \begin{minipage}{0.45\textwidth}
+  \begin{minipage}{0.48\textwidth}
     \begin{lstlisting}[style=scala]
   object ListW:
     case object Brand
@@ -306,19 +443,31 @@ in figure \ref{fig::instantiation}.
     \end{lstlisting}
   \end{minipage}
   \hfill
-  \begin{minipage}{0.45\textwidth}
+  \begin{minipage}{0.48\textwidth}
     \begin{lstlisting}[style=scala]
   object OptionW:
     case object Brand
     type T = Brand.type
 
-    class Inj[A](val x: List[A]) extends Apply[T, A]:
+    class Inj[A](val x: Option[A]) extends Apply[T, A]:
       type This = Option[A]
       override def prj(): This = x
     \end{lstlisting}
   \end{minipage}
   \caption{Two instantiations of \texttt{Apply}.}\label{fig::instantiation}
 \end{figure}
+
+Although the inner class \texttt{Inj} takes a parameter, it is allowed because
+it is not abstract; the nesting within the outer \texttt{object} is merely for
+scoping purposes.
+
+Unfortunately, although these implementations are formulaic, they must be
+written by hand. The input to the \texttt{Newtype} functor contains a type
+member \texttt{'a t}, which is \emph{exactly} the feature (in Scala) we are
+encoding in the first place\footnote{Unlike Scala, the OCaml module language is
+separate from its type and expression languages. While OCaml does allow modules
+to be used as term-level values, they are far more restricted than Scala's
+objects.}! This will be discussed further in section \ref{sec::reflection}.
 
 \subsection{Examples}
 
@@ -336,23 +485,148 @@ Defining typeclass constraints, like the monad interface, can be done by
 further extending \texttt{Apply}:
 \begin{lstlisting}[style=scala]
   trait Monad[F, A] extends Apply[F, A]:
-    def pure(x: A): Apply[F, A]
-    def bind[B](f: A => Apply[F, B]): Apply[F, B]
+    def pure(x: A): Monad[F, A]
+    def bind[B](f: A => Monad[F, B]): Monad[F, B]
+
+  def select[M, A](
+      mb: Apply[M, Boolean],
+      left: Apply[M, A],
+      right: Apply[M, A]): Apply[M, Unit] =
+    mb.bind((b : Boolean) => if b then left else right)
 \end{lstlisting}
 
-\subsection{Reflection}
+Notice that \texttt{select} no longer needs to take the explicit \texttt{ops}
+argument, allowing the more idiomatic form \texttt{mb.bind}.
 
-\section{\DOTw{}}\label{sec::dotw}
+\section{Conclusion}\label{sec::reflection}
 
-\section{}\label{sec::trans}
+We have demonstrated that type-level defunctionalization can be used to
+represent higher-kinded polymorphism in Scala while remaining within the
+surface area of features expressible in DOT. In this section, we discuss the
+potential benefits, alongside further development directions.
 
-\section{Future Work}
+\subsection{Limitations in handwritten code}
 
-\subsubsection*{Metatheory of \DOTw{}}
+Compared to \texttt{higher}, type-level defunctionalization in Scala has a
+number of downsides making it unsuitable for use by the end-user. This is of no
+immediate concern, as Scala supports higher-kinded polymorphism natively (so
+end-users have no need to rely on this pattern to express such programs in the
+first place), but we outline their limitations below for completeness.
 
-\subsubsection*{Mechanisation}
+\subsubsection{Brand uniqueness}\label{sec::brands}
 
-\subsubsection*{Implementation details}
+The safety of this transformation relies on there being a unique instantiation
+of \texttt{Apply[F, A]} for any given brand \texttt{F} and argument \texttt{A}.
+However, this is not guaranteed. Consider a violating consumer manually
+associating \texttt{Apply[ListW.T, A]} with \texttt{Int} (figure
+\ref{fig::bad-brand}).
+
+\begin{figure}[ht]
+  \begin{lstlisting}[style=scala]
+  object ListW:
+    case object Brand
+    type T = Brand.type
+    // ... (see fig. `\ref{fig::instantiation}`)
+
+  class Bad[A] extends Apply[ListW.T, A]:
+    type This = Int
+    override def prj(): This = 0
+  \end{lstlisting}
+  \caption{A careless end-user may break the guarantees of \texttt{Apply}}
+  \label{fig::bad-brand}
+\end{figure}
+
+In OCaml, the generativity of functors allowed the definition of \texttt{app}
+to be hidden from outside consumers, preventing downstream code from generating
+new variants other than as allowed by the \texttt{Newtype} functor.
+Unfortunately, there is no obvious way to recreate this in Scala with sealed
+traits, as we cannot specify the type of the input to a theoretical
+\texttt{newtype} function without the use of abstract, higher-kinded type
+members.
+
+\subsubsection{Kind checking}\label{sec::kinds}
+
+Similarly, the defunctionalized encoding contains no built-in kind checking of
+any sort, limiting the feedback a programmer will receive on ill-kinded uses.
+While the trait system can be used to prevent instantiations of ill-kinded
+applications like \texttt{Apply[ListW.T,~ListW.T]} by ascribing brands to
+generated traits such as, e.g. \texttt{TtoT}, this is cumbersome and
+error-prone.
+
+There is also nothing stopping end-users from creating a value of type
+\texttt{ListW.T} directly, either by referring to \texttt{ListW.Brand} or via a
+typed \texttt{null}. We believe this to be a minor drawback, as it requires
+intentional action by the progrmamer that is difficult to perform by accident.
+
+\subsection{As a compiler representation}\label{sec::compiler}
+
+On the other hand, neither issue is a concern if defunctionalization is
+performed completely automatically. By using internal, mangled names, a
+programmer can never refer to either the trait \texttt{Apply} or witness
+objects such as \texttt{ListW} to manually create erroneous instantiations.
+Furthermore, the boilerplate of the witness objects lend themselves well to
+automation.
+
+Similarly, kind checking can be delegated to the surface language before being
+erased in a defunctionalization pass. Ill-kinded snippets such as
+\texttt{List[List]} or \texttt{x~:~List} can be ruled out during elaboration,
+ensuring that only well-kinded applications remain.
+
+\subsection{Related and future work}
+
+\subsubsection{Implementation details}\label{sec::impl}
+
+This implementation of type-level defunctionalization leans heavily on the
+existence of first-order parametric types in the target language. In theory,
+this is of little concern, as Amin et al demonstrated that these can be easily
+expressed in DOT \cite{amin2016dependent}. In practice, there are still many
+design questions left unanswered. The simple, DOT-inspired representation of
+generics in dotty was ruled unviable due to expressivity concerns
+\cite{OderskyDotty}, and the problematic cases overlap with the construction
+presented in this paper. Instead, a defunctionalization pass might be used to
+simplify the surface language to a point that new encoding is revealed.
+
+\subsubsection{Relating to DOT}
+
+Stucki et al \cite{Stucki2017HigherOrderSW} presented an extension to
+System~F$_\omega$ featuring interval kinds that enforced sub- and supertype
+bounds at the kind level, which was sufficient to express many of Scala's
+patterns but were unable to extend their results to support full
+path-dependence.
+
+One goal of this work is to argue that DOT can express higher-kinded patterns
+as-is. However, the translation presented here uses several high-level features
+that are not present in DOT, such as traits and rank-1 generics. To rule out a
+higher-kinded extension to DOT entirely, a logical next step would be to show a
+translation from a higher-kinded extension to DOT to DOT itself. As a first
+step, we outline a possible approach in appendix \ref{appendix::dot}.
+
+\subsubsection{Simplification}
+
+As presented in this paper, instantiations of the \texttt{Apply} trait requires
+the creation of a separate class \texttt{Inj[A]} to wrap the underlying type.
+This is because, unlike Haskell's typeclasses or Rust traits, Scala's traits
+cannot be applied to a type post-hoc. If we allow the compiler to insert
+further traits to a class at definition time, a far more direct implementation
+becomes possible (figure \ref{fig::simple}).
+\begin{figure}[ht]
+  \begin{lstlisting}[style=scala]
+  case object ListW // Compiler-generated, inaccessible in the surface language
+  class List[A] extends Apply[ListW, A]:
+    // ...
+  \end{lstlisting}
+  \caption{A simpler way to instantiate \texttt{Apply}}\label{fig::simple}
+\end{figure}
+
+By attaching the \texttt{Apply} trait to the underlying class in question, we
+obviate the need for explicit projection and injection functions entirely.
+
+This simpler encoding has two major downsides. Firstly, type aliases such as
+\texttt{type~Foo[A]~=~String} have no underlying class to which to attach the
+trait. Secondly, this encoding admits no obvious way to express a
+partially-applied or curried type constructor. If these can be resolved (or
+sufficiently worked-around), this may prove to be a superior first-order
+representation.
 
 \begin{acks}
   Thanks to Prof. Amin for graciously allowing me to change my final project
@@ -364,6 +638,65 @@ further extending \texttt{Apply}:
 \bibliography{paper}
 
 \begin{appendices}
-  \section{DOT, full rules}
+  \section{Defunctionalization in DOT}\label{appendix::dot}
+
+  In this section, we outline how type-level defunctionalization may be
+  performed in DOT proper.
+
+  We leave the specifics of the source language intentionally vague, as its
+  design will likely strongly inform the translation. To sufficiently model the
+  surface language, it would likely have explicit type-level lambdas and
+  associated kinding/subtyping rules.
+
+  Following Amin et al \cite{amin2016dependent}, the translation of the
+  \texttt{Apply} trait is straightforward:
+  \begin{equation}
+    \begin{aligned}
+      \texttt{Apply[F, A]} \triangleq \mu (\texttt{self} .
+        &(\ &\{ F : * \} \\
+        &\land\ &\{ A : * \} \\
+        &\land\ &\{ T : \bot \cdot \cdot \{ A : * \} \} \\
+        &\land\ &\{ \texttt{prj} : \texttt{self}.T \}))
+    \end{aligned}
+  \end{equation}
+
+  The translation of types would most likely be kind-directed, rather than
+  purely syntactic. This is because a type constructor of arrow kind
+  $k_1~\rightarrow~k_2$ must generate a brand and instantiation of
+  \texttt{Apply} that can be referred to by the rest of the program, but proper
+  types can be translated more straightforwardly. Following Crary
+  \cite{CraryFAMC}, we might define the judgment $\Gamma \vdash T:k
+  \rightsquigarrow [A.\overline{T}, \overline{T}]$ to separate witness carriers
+  (which need to be lifted to the top level) from the final translation (which
+  is used in-place). We bind the variable $A$, representing the parameter to
+  the lambda, which will eventually be re-bound when instantiating the
+  \texttt{Apply} trait at the top level.
+
+  A candidate translation is suggested in figure \ref{fig::sample}.
+
+  \begin{figure}[ht]
+    \begin{prooftree}
+      \AxiomC{$\Gamma, A: k \vdash T: k' \rightsquigarrow [A'.\overline{T'},
+        \overline{T}]$}
+      \AxiomC{$\textrm{fresh}(\texttt{brand})$}
+      \BinaryInfC{$\Gamma \vdash \lambda (A:k).k' : k \rightarrow k'
+        \rightsquigarrow
+        [\_. \mu(\texttt{self}.\{ A : * \} \land
+          \overline{T} \land
+          \overline{T'}[\texttt{self}.A/A']), \texttt{brand}$]}
+    \end{prooftree}
+    \caption{Sample translation rule for type lambdas}
+    \label{fig::sample}
+  \end{figure}
+
+  As written, this rule is most likely incorrect; it does not correctly handle
+  scoping for nested lambdas, which is crucial for representing curried
+  multi-parameter type constructors. Even so, it is hopefully illustrative of
+  what the final translation rules may look like.
+
+  A secondary concern is that the correctness of defunctionalization relies on
+  the ability to generate infinitely-many fresh brands. While DOT lacks
+  direct nominal typing, it can be faked by using fresh label names, which will
+  never unify with a pre-existing type in the program.
 \end{appendices}
 \end{document}
